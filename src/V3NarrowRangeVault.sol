@@ -14,6 +14,8 @@ import {Tick} from "uniswap-v3-core/contracts/libraries/Tick.sol";
 contract V3NarrowRangeVault is ERC4626 {
 
     uint256 internal constant Q128 = 0x100000000000000000000000000000000;
+    uint256 internal constant Q96 = 0x1000000000000000000000000;
+
 
     IERC20 public usdc_erc20;
     IERC20 public weth_erc20;
@@ -43,6 +45,90 @@ contract V3NarrowRangeVault is ERC4626 {
         pool = pool_;
         tickLower = tickLower_;
         tickUpper = tickUpper_;
+    }
+
+// 预估存款数量
+    function previewDeposit(uint256 usdcAmount, uint256 wethAmount) 
+        public
+        view
+        returns(uint128 liquidity, uint256 amountUsdc,uint256 amountWeth, uint256 shares) 
+    {
+        (uint160 sqrtPriceX96, , , , , , ) = pool.slot0();
+        uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(tickLower);
+        uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(tickUpper);
+
+        uint256 amount0 = address(usdc_erc20) == pool.token0() ? usdcAmount : wethAmount;
+        uint256 amount1 = address(usdc_erc20) == pool.token0() ? wethAmount : usdcAmount;
+
+        liquidity = getLiquidityForAmounts(
+                sqrtPriceX96,
+                sqrtRatioAX96,
+                sqrtRatioBX96,
+                amount0,
+                amount1
+            );
+
+            uint256 amountA;
+            uint256 amountB;
+
+        if (liquidity!=0) {
+            if (sqrtRatioAX96 > sqrtRatioBX96) (sqrtRatioAX96, sqrtRatioBX96) = (sqrtRatioBX96, sqrtRatioAX96);
+
+            if (sqrtPriceX96 <= sqrtRatioAX96) {
+                amountA = SqrtPriceMath.getAmount0Delta(sqrtRatioAX96, sqrtRatioBX96, liquidity, true);
+            }else if (sqrtPriceX96 < sqrtRatioBX96) {
+                amountA = SqrtPriceMath.getAmount0Delta(sqrtPriceX96, sqrtRatioBX96, liquidity, true);
+                amountB = SqrtPriceMath.getAmount1Delta(sqrtRatioAX96, sqrtPriceX96, liquidity, true);
+            }else {
+                amountB = SqrtPriceMath.getAmount1Delta(sqrtRatioAX96, sqrtRatioBX96,liquidity, true);
+            }
+            
+        }
+        // (uint256 amount0, uint256 amount1) = pool.mint(
+        //     address(this),
+        //     tickLower,
+        //     tickUpper,
+        //     liquidity,
+        //     abi.encode(msg.sender)
+        // );
+
+        amountUsdc = address(usdc_erc20) == pool.token0() ? amountA : amountB;
+        amountWeth = address(weth_erc20) == pool.token0() ? amountA : amountB;
+        uint256 totalAssets = amountWeth / getPrice() + amountUsdc;
+
+        shares = _convertToShares(totalAssets, Math.Rounding.Floor);
+        return (liquidity, amountUsdc, amountWeth, shares);
+    }
+
+    /// 给定 token0、token1 数量以及当前池子价格和 tick 边界价格，计算能得到的最大流动性。
+    /// sqrtRatioX96：表示池子当前价格的平方根价格
+    /// sqrtRatioAX96：第一个 tick 边界对应的平方根价格
+    /// sqrtRatioBX96：第二个 tick 边界对应的平方根价格
+    /// amount0：投入的 token0 数量
+    /// amount1：投入的 token1 数量
+    /// liquidity：能得到的最大流动性
+    function getLiquidityForAmounts(
+        uint160 sqrtRatioX96,
+        uint160 sqrtRatioAX96,
+        uint160 sqrtRatioBX96,
+        uint256 amount0,
+        uint256 amount1
+    ) public pure returns (uint128 liquidity) {
+        if (sqrtRatioAX96 > sqrtRatioBX96) (sqrtRatioAX96, sqrtRatioBX96) = (sqrtRatioBX96, sqrtRatioAX96);
+
+        if (sqrtRatioX96 <= sqrtRatioAX96) {
+            liquidity = getLiquidityForAmount0(sqrtRatioAX96, sqrtRatioBX96, amount0);
+
+            // 当前价格落在区间内部时，头寸同时持有两种代币，要分别算出两笔流动性，再取较小的那个。
+        } else if (sqrtRatioX96 < sqrtRatioBX96) {
+            uint128 liquidity0 = getLiquidityForAmount0(sqrtRatioX96, sqrtRatioBX96, amount0);
+            uint128 liquidity1 = getLiquidityForAmount1(sqrtRatioAX96, sqrtRatioX96, amount1);
+
+            // 取两笔流动性中较小的那个，多出来的那种代币不会被用完。
+            liquidity = liquidity0 < liquidity1 ? liquidity0 : liquidity1;
+        } else {
+            liquidity = getLiquidityForAmount1(sqrtRatioAX96, sqrtRatioBX96, amount1);
+        }
     }
 
 
@@ -137,12 +223,111 @@ contract V3NarrowRangeVault is ERC4626 {
         int56 delta = tickCumulatives[1] - tickCumulatives[0];
         // 计算平均tick。delta为负数时，除法取整靠近0，要向负无穷取整，所以需要减1
         int24 averageTick = int24(delta % 1800 != 0&&delta<0 ? (delta / 1800) - 1 : (delta / 1800));
-        
+
         uint160 sqrtPriceX96 = TickMath.getSqrtRatioAtTick(averageTick);
+
+        // 排序，确保token0是usdc，token1是weth
+        if (address(usdc_erc20) == pool.token0()) {
         // token1/token0（E/U）的价格
-        return Math.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 192);
+            return Math.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 192);
+        }
+        uint256 quote = uint256(sqrtPriceX96);
+        return ((uint256(1) << 192) / quote) / quote;
     }
 
+
+    /// 说明：给定 token0 数量和价格区间，计算能得到的流动性.计算 amount0 * (sqrt(upper) * sqrt(lower)) / (sqrt(upper) - sqrt(lower))
+    ///  sqrtRatioAX96：第一个 tick 边界对应的平方根价格
+    ///  sqrtRatioBX96：第二个 tick 边界对应的平方根价格
+    ///  amount0：投入的 token0 数量
+    ///  liquidity：算出来的流动性数量
+    function getLiquidityForAmount0(
+        uint160 sqrtRatioAX96,
+        uint160 sqrtRatioBX96,
+        uint256 amount0
+    ) internal pure returns (uint128 liquidity) {
+        if (sqrtRatioAX96 > sqrtRatioBX96) (sqrtRatioAX96, sqrtRatioBX96) = (sqrtRatioBX96, sqrtRatioAX96);
+        uint256 intermediate = FullMath.mulDiv(sqrtRatioAX96, sqrtRatioBX96, Q96);
+        return toUint128(FullMath.mulDiv(amount0, intermediate, sqrtRatioBX96 - sqrtRatioAX96));
+    }
+
+    // 说明：给定 token1 数量和价格区间，计算能得到的流动性.计算 amount1 / (sqrt(upper) - sqrt(lower))。
+    //  sqrtRatioAX96：第一个 tick 边界对应的平方根价格
+    //  sqrtRatioBX96：第二个 tick 边界对应的平方根价格
+    //  amount1：投入的 token1 数量
+    //  liquidity：算出来的流动性数量
+    function getLiquidityForAmount1(
+        uint160 sqrtRatioAX96,
+        uint160 sqrtRatioBX96,
+        uint256 amount1
+    ) internal pure returns (uint128 liquidity) {
+        if (sqrtRatioAX96 > sqrtRatioBX96) (sqrtRatioAX96, sqrtRatioBX96) = (sqrtRatioBX96, sqrtRatioAX96);
+        return toUint128(FullMath.mulDiv(amount1, Q96, sqrtRatioBX96 - sqrtRatioAX96));
+    }
+
+
+    /// 把 uint256 向下收窄成 uint128
+    function toUint128(uint256 x) private pure returns (uint128 y) {
+        require((y = uint128(x)) == x);
+    }
+
+
+
+
+// 虚拟份额
+    function _decimalsOffset() internal view override returns (uint8) {
+        return 12;
+    }
+
+
+// 重写父类方法，单币入口不合适本金库
+    function deposit(uint256 assets, address receiver) public override returns (uint256) {
+        revert();
+    }
+
+    function mint(uint256 shares, address receiver) public override returns (uint256) {
+        revert();
+    }
+
+    function withdraw(uint256 assets, address receiver, address owner) public override returns (uint256) {
+        revert();
+    }
+
+    function redeem(uint256 shares, address receiver, address owner) public override returns (uint256) {
+        revert();
+    }
+
+    function previewDeposit(uint256 assets) public view override returns (uint256) {
+        revert();
+    }
+
+    function previewMint(uint256 shares) public view override returns (uint256) {
+        revert();
+    }
+
+    function previewRedeem(uint256 shares) public view override returns (uint256) {
+        revert();
+    }
+    
+    function previewWithdraw(uint256 assets) public view override returns (uint256) {
+        revert();
+    }
+
+    function maxWithdraw(address owner) public view override returns (uint256) {
+        return 0;
+    }
+    
+    function maxDeposit(address owner) public view override returns (uint256) {
+        return 0;
+    }
+
+    function maxMint(address receiver) public view override returns (uint256) {
+        return 0;
+    }
+    
+    
+    
+    
 
     
 }
