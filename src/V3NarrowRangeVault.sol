@@ -47,6 +47,48 @@ contract V3NarrowRangeVault is ERC4626 {
         tickUpper = tickUpper_;
     }
 
+
+// 存款
+    function deposit(uint256 usdcAmount, uint256 wethAmount, uint256 minShares, address receiver) 
+        public 
+        returns (uint128 liquidity,uint256 shares,uint256 usdc,uint256 weth) 
+    {
+        (liquidity, , ,  ) = previewDeposit(usdcAmount, wethAmount);
+
+        (uint256 amount0, uint256 amount1) = pool.mint(
+            address(this),
+            tickLower,
+            tickUpper,
+            liquidity,
+            abi.encode(msg.sender)
+        );
+
+        usdc = address(usdc_erc20) == pool.token0() ? amount0 : amount1;
+        weth = address(weth_erc20) == pool.token0() ? amount0 : amount1;
+
+        require(usdc <= usdcAmount && weth <= wethAmount, 'Price slippage check');
+
+// weth 折算成 usdc 资产计价。
+        uint256 totalAssets = weth / getPrice() + usdc;
+
+        shares = convertToShares(totalAssets);
+        require(shares >= minShares, 'Minimum shares not met');
+
+        _mint(receiver, shares);
+        return (liquidity, shares, usdc, weth);
+    }
+
+// 重写 uniswapV3MintCallback 方法，用于处理池子 mint 回调付款
+    function uniswapV3MintCallback(uint256 amount0Owed, uint256 amount1Owed, bytes calldata data) external {
+        require(msg.sender == address(pool));
+        address payer = abi.decode(data, (address));
+        address token0 = pool.token0();
+        address token1 = pool.token1();
+        if (amount0Owed > 0) IERC20(token0).transferFrom(payer, msg.sender, amount0Owed);
+        if (amount1Owed > 0) IERC20(token1).transferFrom(payer, msg.sender, amount1Owed);
+    }
+
+
 // 预估存款数量
     function previewDeposit(uint256 usdcAmount, uint256 wethAmount) 
         public
@@ -84,13 +126,6 @@ contract V3NarrowRangeVault is ERC4626 {
             }
             
         }
-        // (uint256 amount0, uint256 amount1) = pool.mint(
-        //     address(this),
-        //     tickLower,
-        //     tickUpper,
-        //     liquidity,
-        //     abi.encode(msg.sender)
-        // );
 
         amountUsdc = address(usdc_erc20) == pool.token0() ? amountA : amountB;
         amountWeth = address(weth_erc20) == pool.token0() ? amountA : amountB;
