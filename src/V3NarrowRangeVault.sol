@@ -10,6 +10,7 @@ import {Math} from "openzeppelin-contracts/contracts/utils/math/Math.sol";
 import {SqrtPriceMath} from "uniswap-v3-core/contracts/libraries/SqrtPriceMath.sol";
 import {FullMath} from "uniswap-v3-core/contracts/libraries/FullMath.sol";
 import {Tick} from "uniswap-v3-core/contracts/libraries/Tick.sol";
+import {TransferHelper} from "uniswap-v3-core/contracts/libraries/TransferHelper.sol";
 
 contract V3NarrowRangeVault is ERC4626 {
 
@@ -45,6 +46,74 @@ contract V3NarrowRangeVault is ERC4626 {
         pool = pool_;
         tickLower = tickLower_;
         tickUpper = tickUpper_;
+    }
+
+
+// 按个人份额比例赎回
+    function Redeem(uint256 shares) public returns (uint256 amountUsdc,uint256 amountWeth) {
+        require(shares > 0, "Shares must be greater than 0");
+        require(shares <= balanceOf(msg.sender), "Insufficient balance");
+
+        bytes32 positionKey = keccak256(abi.encodePacked(address(this), tickLower, tickUpper));
+        (uint128 liquidity, , , , ) = pool.positions(positionKey);
+        uint256 denominator = totalSupply() + 10 ** _decimalsOffset();
+
+        if (liquidity != 0 ) {
+    // 个人份额比例的流动性
+            liquidity = uint128(Math.mulDiv(liquidity, shares, denominator, Math.Rounding.Floor));
+
+            (uint256 amount0, uint256 amount1) = pool.burn( tickLower, tickUpper, liquidity);
+            (, , , uint128 tokensOwed0After , uint128 tokensOwed1After) = pool.positions(positionKey);
+
+    // 个人份额比例的手续费
+    // tokensOwed0After是 完整手续费+销毁个人比例流动性后的资产，完整手续费乘上个人份额比例才是个人应得的手续费。
+            uint256 tokensOwed0 = Math.mulDiv(tokensOwed0After - amount0, shares, denominator, Math.Rounding.Floor);
+            uint256 tokensOwed1 = Math.mulDiv(tokensOwed1After - amount1, shares, denominator, Math.Rounding.Floor);
+
+
+            // 个人份额比例的金库闲置资产。在 collect 之前执行
+            uint256 idleUsdc = Math.mulDiv(usdc_erc20.balanceOf(address(this)), shares, denominator, Math.Rounding.Floor);
+            uint256 idleWeth = Math.mulDiv(weth_erc20.balanceOf(address(this)), shares, denominator, Math.Rounding.Floor);
+
+            pool.collect(address(this), tickLower, tickUpper, uint128(tokensOwed0 + amount0), uint128(tokensOwed1 + amount1));
+            
+            // 区分币种（手续费+流动性兑换后的资产）
+            amountUsdc = address(usdc_erc20) == pool.token0() ? tokensOwed0+amount0 : tokensOwed1+amount1;
+            amountWeth = address(weth_erc20) == pool.token0() ? tokensOwed0+amount0 : tokensOwed1+amount1;
+
+            _burn(msg.sender, shares);
+
+            amountUsdc += idleUsdc;
+            amountWeth += idleWeth;
+
+            TransferHelper.safeTransfer(address(usdc_erc20), msg.sender, amountUsdc);
+            TransferHelper.safeTransfer(address(weth_erc20), msg.sender, amountWeth);
+            
+    // 如果流动性为0，则处于再平衡中。份额都进到了金库闲置资产中。
+        }else{
+            // 先全部提取到金库闲置资产中
+            pool.collect(address(this), tickLower, tickUpper, type(uint128).max, type(uint128).max);
+            // 个人份额比例的金库闲置资产。
+            amountUsdc = Math.mulDiv(usdc_erc20.balanceOf(address(this)), shares, denominator, Math.Rounding.Floor);
+            amountWeth = Math.mulDiv(weth_erc20.balanceOf(address(this)), shares, denominator, Math.Rounding.Floor);
+            _burn(msg.sender, shares);
+
+            TransferHelper.safeTransfer(address(usdc_erc20), msg.sender, amountUsdc);
+            TransferHelper.safeTransfer(address(weth_erc20), msg.sender, amountWeth);
+        }
+    }
+ 
+
+// 预估赎回数量
+    function previewRedeem(uint256 shares,address owner) public view returns (uint256 amountUsdc,uint256 amountWeth) {
+        require(shares <= balanceOf(owner), "Insufficient balance");
+
+        (amountUsdc,amountWeth) = totalAmount();
+        // amountUsdc = Math.mulDiv(totalUsdc, shares, totalSupply() + 10 ** _decimalsOffset());
+        // amountWeth = Math.mulDiv(totalWeth, shares, totalSupply() + 10 ** _decimalsOffset());
+        return (Math.mulDiv(amountUsdc, shares, totalSupply() + 10 ** _decimalsOffset()),
+                Math.mulDiv(amountWeth, shares, totalSupply() + 10 ** _decimalsOffset()));
+
     }
 
 
@@ -167,8 +236,14 @@ contract V3NarrowRangeVault is ERC4626 {
     }
 
 
-// 返回当前池子中持有的资产价值，以USDC计价。
-    function totalAssets() public view override returns (uint256) {
+// 获取当前金库在V3中的流动性
+    function getLiquidity() public view returns (uint128 liquidity) {
+        bytes32 positionKey = keccak256(abi.encodePacked(address(this), tickLower, tickUpper));
+        (liquidity, , , , ) = pool.positions(positionKey);
+    }
+
+// 计算总资产数量。V3池子 + 未领取手续费 + 金库闲置代币。
+    function totalAmount() public view returns (uint256 totalUsdc, uint256 totalWeth) {
         bytes32 positionKey = keccak256(abi.encodePacked(address(this), tickLower, tickUpper));
         (
             uint128 liquidity,
@@ -228,14 +303,20 @@ contract V3NarrowRangeVault is ERC4626 {
         }
 
         // 计算token0和1的总数量
-        uint256 totalUsdc = address(usdc_erc20)==pool.token0()? 
+        totalUsdc = address(usdc_erc20)==pool.token0()? 
         amount0 + tokensOwed0 + IERC20(usdc_erc20).balanceOf(address(this)):
         amount1 + tokensOwed1 + IERC20(usdc_erc20).balanceOf(address(this));
 
-        uint256 totalWeth = address(weth_erc20)==pool.token1()? 
+        totalWeth = address(weth_erc20)==pool.token1()? 
         amount1 + tokensOwed1 + IERC20(weth_erc20).balanceOf(address(this)):
         amount0 + tokensOwed0 + IERC20(weth_erc20).balanceOf(address(this));
 
+    }
+
+
+// 返回当前池子中持有的资产价值，以USDC计价。
+    function totalAssets() public view override returns (uint256) {
+        (uint256 totalUsdc, uint256 totalWeth) = totalAmount();
         // 计算资产价值。求出来的是总的 eth+usdc 的价值，eth 先折价为 usdc。
         return totalWeth / getPrice()  + totalUsdc;
     }
