@@ -21,15 +21,16 @@ contract V3NarrowRangeVault is ERC4626 {
     IERC20 public usdc_erc20;
     IERC20 public weth_erc20;
     IUniswapV3Pool public pool;
+    address public admin;
     int24 public tickLower;
     int24 public tickUpper;
-
+    
 
     constructor(IUniswapV3Pool pool_, IERC20 asset_,int24 tickLower_, int24 tickUpper_)
         ERC20("V3_Narrow_Range_Vaul","v3nrv")
         ERC4626(asset_)
     {
- 
+
         address token0Address = pool_.token0();
         address token1Address = pool_.token1();
 
@@ -46,6 +47,66 @@ contract V3NarrowRangeVault is ERC4626 {
         pool = pool_;
         tickLower = tickLower_;
         tickUpper = tickUpper_;
+        admin = msg.sender;
+    }
+
+// 再平衡。销毁原有仓位，创建新仓位。多余的代币存到金库闲置资产中。
+    function rebalance(int24 newTickLower, int24 newTickUpper) 
+    public 
+    onlyAdmin 
+    returns (uint128 newLiquidity,uint256 usdc,uint256 weth)
+    {
+        require(newTickLower < newTickUpper, "newTickLower must be less than newTickUpper");
+        require(newTickLower % pool.tickSpacing() == 0 && newTickUpper % pool.tickSpacing() == 0, "newTickLower and newTickUpper must be divisible by tickSpacing");
+
+// 计算池子最近1800秒的平均tick。再平衡需要价格区间囊括在当前tick内。
+// 查询池子最近1800秒的累计tick
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 1800;
+        secondsAgos[1] = 0;
+        (int56[] memory tickCumulatives,) = pool.observe(secondsAgos);
+
+        // 计算累计tick的差值
+        int56 delta = tickCumulatives[1] - tickCumulatives[0];
+        // 计算平均tick。delta为负数时，除法取整靠近0，要向负无穷取整，所以需要减1
+        int24 averageTick = int24(delta % 1800 != 0&&delta<0 ? (delta / 1800) - 1 : (delta / 1800));
+        require(averageTick >= newTickLower && averageTick < newTickUpper, "averageTick must be between newTickLower and newTickUpper");
+
+        bytes32 positionKey = keccak256(abi.encodePacked(address(this), tickLower, tickUpper));
+        (uint128 liquidity, , , , ) = pool.positions(positionKey);
+        
+        if (liquidity != 0) {
+            pool.burn( tickLower, tickUpper, liquidity);  
+        }
+
+        // 闲置资产和手续费都转到金库中。
+        pool.collect(address(this), tickLower, tickUpper, type(uint128).max, type(uint128).max);
+
+        tickLower = newTickLower;
+        tickUpper = newTickUpper;
+
+        uint256 amountUsdc = usdc_erc20.balanceOf(address(this));
+        uint256 amountWeth = weth_erc20.balanceOf(address(this));
+
+        (newLiquidity, , ,) = previewDeposit(amountUsdc, amountWeth);
+
+        uint256 amount0 ;
+        uint256 amount1;
+
+        // 如果 newLiquidity 为0，则凑不齐新区间要的币。
+        if (newLiquidity >0) {
+            (amount0, amount1) = pool.mint(
+            address(this),
+            tickLower,
+            tickUpper,
+            newLiquidity,
+            abi.encode(address(this))
+        );
+        }
+        // 如果 newLiquidity 为0，则表示这次没有铸出新仓，币留在金库里，返参都是0。
+        // 否则，usdc 和 weth 是实际铸进新仓的数量。
+        usdc = address(usdc_erc20) == pool.token0() ? amount0 : amount1;
+        weth = address(weth_erc20) == pool.token0() ? amount0 : amount1;
     }
 
 
@@ -60,7 +121,7 @@ contract V3NarrowRangeVault is ERC4626 {
 
         if (liquidity != 0 ) {
     // 个人份额比例的流动性
-            liquidity = uint128(Math.mulDiv(liquidity, shares, denominator, Math.Rounding.Floor));
+            liquidity = toUint128(Math.mulDiv(liquidity, shares, denominator, Math.Rounding.Floor));
 
             (uint256 amount0, uint256 amount1) = pool.burn( tickLower, tickUpper, liquidity);
             (, , , uint128 tokensOwed0After , uint128 tokensOwed1After) = pool.positions(positionKey);
@@ -75,7 +136,7 @@ contract V3NarrowRangeVault is ERC4626 {
             uint256 idleUsdc = Math.mulDiv(usdc_erc20.balanceOf(address(this)), shares, denominator, Math.Rounding.Floor);
             uint256 idleWeth = Math.mulDiv(weth_erc20.balanceOf(address(this)), shares, denominator, Math.Rounding.Floor);
 
-            pool.collect(address(this), tickLower, tickUpper, uint128(tokensOwed0 + amount0), uint128(tokensOwed1 + amount1));
+            pool.collect(address(this), tickLower, tickUpper, toUint128(tokensOwed0 + amount0), toUint128(tokensOwed1 + amount1));
             
             // 区分币种（手续费+流动性兑换后的资产）
             amountUsdc = address(usdc_erc20) == pool.token0() ? tokensOwed0+amount0 : tokensOwed1+amount1;
@@ -109,8 +170,6 @@ contract V3NarrowRangeVault is ERC4626 {
         require(shares <= balanceOf(owner), "Insufficient balance");
 
         (amountUsdc,amountWeth) = totalAmount();
-        // amountUsdc = Math.mulDiv(totalUsdc, shares, totalSupply() + 10 ** _decimalsOffset());
-        // amountWeth = Math.mulDiv(totalWeth, shares, totalSupply() + 10 ** _decimalsOffset());
         return (Math.mulDiv(amountUsdc, shares, totalSupply() + 10 ** _decimalsOffset()),
                 Math.mulDiv(amountWeth, shares, totalSupply() + 10 ** _decimalsOffset()));
 
@@ -153,8 +212,13 @@ contract V3NarrowRangeVault is ERC4626 {
         address payer = abi.decode(data, (address));
         address token0 = pool.token0();
         address token1 = pool.token1();
-        if (amount0Owed > 0) IERC20(token0).transferFrom(payer, msg.sender, amount0Owed);
-        if (amount1Owed > 0) IERC20(token1).transferFrom(payer, msg.sender, amount1Owed);
+        if (payer == address(this)) {
+            if (amount0Owed > 0) IERC20(token0).transfer(msg.sender, amount0Owed);
+            if (amount1Owed > 0) IERC20(token1).transfer(msg.sender, amount1Owed);
+        }else{
+            if (amount0Owed > 0) IERC20(token0).transferFrom(payer, msg.sender, amount0Owed);
+            if (amount1Owed > 0) IERC20(token1).transferFrom(payer, msg.sender, amount1Owed);
+        }
     }
 
 
@@ -298,8 +362,8 @@ contract V3NarrowRangeVault is ERC4626 {
             uint256 feeGrowthInside1X128 = feeGrowthGlobal1X128 - feeGrowthBelow1X128 - feeGrowthAbove1X128;
 
             // 计算未领取的手续费
-            tokensOwed0 += uint128(FullMath.mulDiv(feeGrowthInside0X128 - feeGrowthInside0LastX128, liquidity,Q128));
-            tokensOwed1 += uint128(FullMath.mulDiv(feeGrowthInside1X128 - feeGrowthInside1LastX128, liquidity,Q128));
+            tokensOwed0 += toUint128(FullMath.mulDiv(feeGrowthInside0X128 - feeGrowthInside0LastX128, liquidity,Q128));
+            tokensOwed1 += toUint128(FullMath.mulDiv(feeGrowthInside1X128 - feeGrowthInside1LastX128, liquidity,Q128));
         }
 
         // 计算token0和1的总数量
@@ -387,8 +451,17 @@ contract V3NarrowRangeVault is ERC4626 {
         require((y = uint128(x)) == x);
     }
 
+// 修改管理员
+    function changeAdmin(address newAdmin) public {
+        require(msg.sender == admin, "Only admin can change admin");
+        admin = newAdmin;
+    }
 
-
+    modifier onlyAdmin {
+        require(msg.sender == admin, "Only admin can call this function");
+        _;
+        
+    }
 
 // 虚拟份额
     function _decimalsOffset() internal view override returns (uint8) {
