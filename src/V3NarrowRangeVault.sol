@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 
 import {ERC4626} from "openzeppelin-contracts/contracts/token/ERC20/extensions/ERC4626.sol";
 import {IUniswapV3Pool} from "uniswap-v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+import {IERC20Metadata} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import {TickMath} from "uniswap-v3-core/contracts/libraries/TickMath.sol";
@@ -12,6 +13,8 @@ import {FullMath} from "uniswap-v3-core/contracts/libraries/FullMath.sol";
 import {Tick} from "uniswap-v3-core/contracts/libraries/Tick.sol";
 import {TransferHelper} from "uniswap-v3-core/contracts/libraries/TransferHelper.sol";
 
+
+// V3窄区间金库
 contract V3NarrowRangeVault is ERC4626 {
 
     uint256 internal constant Q128 = 0x100000000000000000000000000000000;
@@ -25,25 +28,25 @@ contract V3NarrowRangeVault is ERC4626 {
     int24 public tickLower;
     int24 public tickUpper;
     
-
+// asset_ 是usdc
     constructor(IUniswapV3Pool pool_, IERC20 asset_,int24 tickLower_, int24 tickUpper_)
         ERC20("V3_Narrow_Range_Vaul","v3nrv")
         ERC4626(asset_)
     {
-
+        require(IERC20Metadata(address(asset_)).decimals() == 6, "Asset decimals must be 6");
         address token0Address = pool_.token0();
         address token1Address = pool_.token1();
 
-        if (address(asset_) != token0Address && address(asset_) != token1Address) {
-            revert();
-        }
         if (token0Address == address(asset_)) {
             usdc_erc20 = IERC20(token0Address);
             weth_erc20 = IERC20(token1Address);
-        } else {
+        } else if (token1Address == address(asset_)) {
             usdc_erc20 = IERC20(token1Address);
             weth_erc20 = IERC20(token0Address);
+        } else {
+            revert("Asset not in the pool's token pair");
         }
+        require(IERC20Metadata(address(weth_erc20)).decimals() == 18, "Other token decimals must be 18");
         pool = pool_;
         tickLower = tickLower_;
         tickUpper = tickUpper_;
@@ -336,13 +339,41 @@ contract V3NarrowRangeVault is ERC4626 {
             }
         }
 
-        // 计算区间内自上次更新以来的手续费
+        (tokensOwed0, tokensOwed1) = _accruedTokensOwed(
+            tick,
+            liquidity,
+            feeGrowthInside0LastX128,
+            feeGrowthInside1LastX128,
+            tokensOwed0,
+            tokensOwed1
+        );
+
+        // 计算token0和1的总数量
+        totalUsdc = address(usdc_erc20)==pool.token0()? 
+        amount0 + tokensOwed0 + IERC20(usdc_erc20).balanceOf(address(this)):
+        amount1 + tokensOwed1 + IERC20(usdc_erc20).balanceOf(address(this));
+
+        totalWeth = address(weth_erc20)==pool.token1()? 
+        amount1 + tokensOwed1 + IERC20(weth_erc20).balanceOf(address(this)):
+        amount0 + tokensOwed0 + IERC20(weth_erc20).balanceOf(address(this));
+
+    }
+
+    // 区间内自上次更新以来的手续费，加进 tokensOwed。单独成函数是为了避开栈太深。
+    function _accruedTokensOwed(
+        int24 tick,
+        uint128 liquidity,
+        uint256 feeGrowthInside0LastX128,
+        uint256 feeGrowthInside1LastX128,
+        uint128 tokensOwed0,
+        uint128 tokensOwed1
+    ) internal view returns (uint128, uint128) {
         (,, uint256 feeGrowthOutside0Lower, uint256 feeGrowthOutside1Lower,,,,) = pool.ticks(tickLower);
         (,, uint256 feeGrowthOutside0Upper, uint256 feeGrowthOutside1Upper,,,,) = pool.ticks(tickUpper);
         uint256 feeGrowthGlobal0X128 = pool.feeGrowthGlobal0X128();
         uint256 feeGrowthGlobal1X128 = pool.feeGrowthGlobal1X128();
 
-// 0.8版本溢出会回滚。这里即便溢出一次，计算也不会出错。
+        // 0.8版本溢出会回滚。这里即便溢出一次，计算也不会出错。
         unchecked {
             uint256 feeGrowthBelow0X128 = tick >= tickLower
                 ? feeGrowthOutside0Lower
@@ -361,20 +392,10 @@ contract V3NarrowRangeVault is ERC4626 {
                 : feeGrowthGlobal1X128 - feeGrowthOutside1Upper;
             uint256 feeGrowthInside1X128 = feeGrowthGlobal1X128 - feeGrowthBelow1X128 - feeGrowthAbove1X128;
 
-            // 计算未领取的手续费
-            tokensOwed0 += toUint128(FullMath.mulDiv(feeGrowthInside0X128 - feeGrowthInside0LastX128, liquidity,Q128));
-            tokensOwed1 += toUint128(FullMath.mulDiv(feeGrowthInside1X128 - feeGrowthInside1LastX128, liquidity,Q128));
+            tokensOwed0 += toUint128(FullMath.mulDiv(feeGrowthInside0X128 - feeGrowthInside0LastX128, liquidity, Q128));
+            tokensOwed1 += toUint128(FullMath.mulDiv(feeGrowthInside1X128 - feeGrowthInside1LastX128, liquidity, Q128));
         }
-
-        // 计算token0和1的总数量
-        totalUsdc = address(usdc_erc20)==pool.token0()? 
-        amount0 + tokensOwed0 + IERC20(usdc_erc20).balanceOf(address(this)):
-        amount1 + tokensOwed1 + IERC20(usdc_erc20).balanceOf(address(this));
-
-        totalWeth = address(weth_erc20)==pool.token1()? 
-        amount1 + tokensOwed1 + IERC20(weth_erc20).balanceOf(address(this)):
-        amount0 + tokensOwed0 + IERC20(weth_erc20).balanceOf(address(this));
-
+        return (tokensOwed0, tokensOwed1);
     }
 
 

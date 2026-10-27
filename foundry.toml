@@ -2,5 +2,30 @@
 src = "src"
 out = "out"
 libs = ["lib"]
+auto_detect_solc = true
+optimizer = true
+optimizer_runs = 800
+# 金库的 totalAmount、rebalance 局部变量多，旧代码生成器会栈太深。0.8 走 via_ir。
+via_ir = true
+code_size_limit = 150000
+fs_permissions = [{ access = "read", path = "./test/utils" }]
+
+# 0.7.6 的工厂不能开 via_ir（当时还不支持 modifier）。单独用这个配置编译。
+# FOUNDRY_PROFILE=factory forge build
+[profile.factory]
+src = "lib"
+test = "lib/uniswap-v3-core/contracts/interfaces"
+script = "lib/uniswap-v3-core/contracts/interfaces"
+out = "out-factory"
+solc = "0.7.6"
+via_ir = false
+optimizer = true
+optimizer_runs = 800
+skip = [
+    "lib/openzeppelin-contracts/**",
+    "lib/forge-std/**",
+    "lib/uniswap-v3-core/audits/**",
+    "lib/uniswap-v3-core/contracts/test/**",
+]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
