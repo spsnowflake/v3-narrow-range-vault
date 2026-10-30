@@ -22,6 +22,7 @@ abstract contract VaultFixture is Test {
     IUniswapV3Pool internal pool;
     V3NarrowRangeVault internal vault;
 
+
     function setUp() public virtual {
         usdc = new TestERC20("USD Coin", "USDC", 6);
         weth = new TestERC20("Wrapped Ether", "WETH", 18);
@@ -32,8 +33,14 @@ abstract contract VaultFixture is Test {
 
         // 初始化写下的观察点，要至少早于调用 1800 秒，getPrice 和 rebalance 里的 observe 才能用。
         vm.warp(block.timestamp + 1800);
+        // 增加观察点，否则 getPrice 和 rebalance 里的 observe 会失败。
+        pool.increaseObservationCardinalityNext(2); 
         
         address admin = makeAddr("admin");
+        address user1 = makeAddr("user1");
+
+        usdc.mint(user1, 3000e18);
+        weth.mint(user1, 3000e18);
 
         vm.prank(admin);
         vault = new V3NarrowRangeVault(pool, usdc, TICK_LOWER, TICK_UPPER);

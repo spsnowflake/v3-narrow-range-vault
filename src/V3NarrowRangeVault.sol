@@ -260,7 +260,6 @@ contract V3NarrowRangeVault is ERC4626 {
             }else {
                 amountB = SqrtPriceMath.getAmount1Delta(sqrtRatioAX96, sqrtRatioBX96,liquidity, true);
             }
-            
         }
 
         amountUsdc = address(usdc_erc20) == pool.token0() ? amountA : amountB;
@@ -359,7 +358,7 @@ contract V3NarrowRangeVault is ERC4626 {
 
     }
 
-    // 区间内自上次更新以来的手续费，加进 tokensOwed。单独成函数是为了避开栈太深。
+    // 区间内自上次更新以来的手续费，加进 tokensOwed。
     function _accruedTokensOwed(
         int24 tick,
         uint128 liquidity,
@@ -446,7 +445,7 @@ contract V3NarrowRangeVault is ERC4626 {
         uint160 sqrtRatioAX96,
         uint160 sqrtRatioBX96,
         uint256 amount0
-    ) internal pure returns (uint128 liquidity) {
+    ) public pure returns (uint128 liquidity) {
         if (sqrtRatioAX96 > sqrtRatioBX96) (sqrtRatioAX96, sqrtRatioBX96) = (sqrtRatioBX96, sqrtRatioAX96);
         uint256 intermediate = FullMath.mulDiv(sqrtRatioAX96, sqrtRatioBX96, Q96);
         return toUint128(FullMath.mulDiv(amount0, intermediate, sqrtRatioBX96 - sqrtRatioAX96));
@@ -461,7 +460,7 @@ contract V3NarrowRangeVault is ERC4626 {
         uint160 sqrtRatioAX96,
         uint160 sqrtRatioBX96,
         uint256 amount1
-    ) internal pure returns (uint128 liquidity) {
+    ) public pure returns (uint128 liquidity) {
         if (sqrtRatioAX96 > sqrtRatioBX96) (sqrtRatioAX96, sqrtRatioBX96) = (sqrtRatioBX96, sqrtRatioAX96);
         return toUint128(FullMath.mulDiv(amount1, Q96, sqrtRatioBX96 - sqrtRatioAX96));
     }
@@ -474,6 +473,7 @@ contract V3NarrowRangeVault is ERC4626 {
 
 // 修改管理员
     function changeAdmin(address newAdmin) public {
+        require(newAdmin != address(0), "New admin cannot be the zero address");
         require(msg.sender == admin, "Only admin can change admin");
         admin = newAdmin;
     }
