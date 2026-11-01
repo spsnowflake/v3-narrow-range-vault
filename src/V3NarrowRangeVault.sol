@@ -431,6 +431,7 @@ contract V3NarrowRangeVault is ERC4626 {
         // token1/token0（E/U）的价格
             return Math.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 192);
         }
+        // WETH 是 token0 时，token0/token1 是 E/U
         uint256 quote = uint256(sqrtPriceX96);
         return ((uint256(1) << 192) / quote) / quote;
     }
@@ -483,6 +484,7 @@ contract V3NarrowRangeVault is ERC4626 {
         _;
         
     }
+
 
 // 虚拟份额
     function _decimalsOffset() internal view override returns (uint8) {
