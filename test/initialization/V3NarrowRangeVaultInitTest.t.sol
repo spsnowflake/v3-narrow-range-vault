@@ -10,7 +10,7 @@ import {IUniswapV3Pool} from "uniswap-v3-core/contracts/interfaces/IUniswapV3Poo
 
 //  测试 V3NarrowRangeVault 构造函数初始化
 contract V3NarrowRangeVaultInit is VaultFixture {
-    function test_constructorInitialized() public view {
+    function test_constructorInitialized() public {
         assertEq(usdc.decimals(), 6);
         assertEq(weth.decimals(), 18);
 
@@ -30,10 +30,11 @@ contract V3NarrowRangeVaultInit is VaultFixture {
         assertEq(address(vault.weth_erc20()), address(weth));
         assertEq(vault.tickLower(), TICK_LOWER);
         assertEq(vault.tickUpper(), TICK_UPPER);
-        assertEq(vault.admin(), address(this));
+        address admin = makeAddr("admin");
+        assertEq(vault.admin(), admin);
 
         // tick 0 上，两种币的原始比价是 1，和谁是 token0 无关。
-        assertEq(vault.getPrice(), 1);
+        assertEq(vault.getETHAsUSDCPrice(1e18), 10**12);
     }
 
 

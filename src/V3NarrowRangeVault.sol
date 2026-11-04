@@ -182,7 +182,7 @@ contract V3NarrowRangeVault is ERC4626 {
 // 存款
     function deposit(uint256 usdcAmount, uint256 wethAmount, uint256 minShares, address receiver) 
         public 
-        returns (uint128 liquidity,uint256 shares,uint256 usdc,uint256 weth) 
+        returns (uint128 liquidity,uint256 usdc,uint256 weth,uint256 shares) 
     {
         (liquidity, , ,  ) = previewDeposit(usdcAmount, wethAmount);
 
@@ -200,7 +200,7 @@ contract V3NarrowRangeVault is ERC4626 {
         require(usdc <= usdcAmount && weth <= wethAmount, 'Price slippage check');
 
 // weth 折算成 usdc 资产计价。
-        uint256 totalAssets = weth / getPrice() + usdc;
+        uint256 totalAssets = wethInUsdc(weth) + usdc;
 
         shares = convertToShares(totalAssets);
         require(shares >= minShares, 'Minimum shares not met');
@@ -264,7 +264,7 @@ contract V3NarrowRangeVault is ERC4626 {
 
         amountUsdc = address(usdc_erc20) == pool.token0() ? amountA : amountB;
         amountWeth = address(weth_erc20) == pool.token0() ? amountA : amountB;
-        uint256 totalAssets = amountWeth / getPrice() + amountUsdc;
+        uint256 totalAssets = wethInUsdc(amountWeth) + amountUsdc;
 
         shares = _convertToShares(totalAssets, Math.Rounding.Floor);
         return (liquidity, amountUsdc, amountWeth, shares);
@@ -277,13 +277,14 @@ contract V3NarrowRangeVault is ERC4626 {
     /// amount0：投入的 token0 数量
     /// amount1：投入的 token1 数量
     /// liquidity：能得到的最大流动性
+    // 需要区分池子的 token0 和 token1 分别代表什么代币
     function getLiquidityForAmounts(
         uint160 sqrtRatioX96,
         uint160 sqrtRatioAX96,
         uint160 sqrtRatioBX96,
         uint256 amount0,
         uint256 amount1
-    ) public pure returns (uint128 liquidity) {
+    ) public view returns (uint128 liquidity) {
         if (sqrtRatioAX96 > sqrtRatioBX96) (sqrtRatioAX96, sqrtRatioBX96) = (sqrtRatioBX96, sqrtRatioAX96);
 
         if (sqrtRatioX96 <= sqrtRatioAX96) {
@@ -402,17 +403,19 @@ contract V3NarrowRangeVault is ERC4626 {
     function totalAssets() public view override returns (uint256) {
         (uint256 totalUsdc, uint256 totalWeth) = totalAmount();
         // 计算资产价值。求出来的是总的 eth+usdc 的价值，eth 先折价为 usdc。
-        return totalWeth / getPrice()  + totalUsdc;
+        return wethInUsdc(totalWeth) + totalUsdc;
     }
 
 
-// 返回价格（1E值多少U）
-    function getETHAsUSDCPrice() public view returns (uint256) {
+// 返回价格（算出1800秒均价下，这些 wei 值多少 USDC 最小单位后，除以10^6，换成整个 USDC）
+// 池子价格为1:1时，1整个Weth（10**18）值 10**12 整个U
+    function getETHAsUSDCPrice(uint256 amountWeth) public view returns (uint256) {
         // 1 个 WETH 值多少 USDC = 10^18 / price / 10^6 = 10^12 / price
-        return 10**12/getPrice();
+        return wethInUsdc(amountWeth) / 1e6;
     }
 
-    function getPrice() public view returns (uint256) {
+// 返回1800秒均价的平方根价格
+    function _twapSqrtPriceX96()internal view returns (uint160) {
         // 查询池子最近1800秒的累计tick
         uint32[] memory secondsAgos = new uint32[](2);
         secondsAgos[0] = 1800;
@@ -423,17 +426,29 @@ contract V3NarrowRangeVault is ERC4626 {
         int56 delta = tickCumulatives[1] - tickCumulatives[0];
         // 计算平均tick。delta为负数时，除法取整靠近0，要向负无穷取整，所以需要减1
         int24 averageTick = int24(delta % 1800 != 0&&delta<0 ? (delta / 1800) - 1 : (delta / 1800));
-
         uint160 sqrtPriceX96 = TickMath.getSqrtRatioAtTick(averageTick);
+        return sqrtPriceX96;
+    }
+// 算价格。当getPrice() 大于0时，用这个方法没问题。小于1时，该方法会收成0，用wethInUsdc() 这个方法。
+    // function getPrice() public view returns (uint256) {
+    //     uint160 sqrtPriceX96 = _twapSqrtPriceX96();
+    //     // 排序，确保token0是usdc，token1是weth
+    //     if (address(usdc_erc20) == pool.token0()) {
+    //     // token1/token0（E/U）的价格
+    //         return Math.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 192);
+    //     }
+    //     // WETH 是 token0 时，token0/token1 是 E/U
+    //     uint256 quote = uint256(sqrtPriceX96);
+    //     return ((uint256(1) << 192) / quote) / quote;
+    // }
 
-        // 排序，确保token0是usdc，token1是weth
+// 算出1800秒均价下，这些 wei 值多少 USDC 最小单位
+    function wethInUsdc(uint256 amountWeth) public view returns (uint256) {
+        uint160 quote = _twapSqrtPriceX96();
         if (address(usdc_erc20) == pool.token0()) {
-        // token1/token0（E/U）的价格
-            return Math.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 192);
+            return FullMath.mulDiv(FullMath.mulDiv(amountWeth, 1 << 96, quote), 1 << 96, quote);
         }
-        // WETH 是 token0 时，token0/token1 是 E/U
-        uint256 quote = uint256(sqrtPriceX96);
-        return ((uint256(1) << 192) / quote) / quote;
+        return FullMath.mulDiv(FullMath.mulDiv(amountWeth, quote, 1 << 96), quote, 1 << 96);
     }
 
 

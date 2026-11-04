@@ -9,8 +9,14 @@ import {IUniswapV3Pool} from "uniswap-v3-core/contracts/interfaces/IUniswapV3Poo
 import {V3NarrowRangeVault} from "../../src/V3NarrowRangeVault.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
-contract GetPriceAndGetETHAsUSDCPriceTest is VaultFixture {
+contract WethInUsdcAndGetETHAsUSDCPriceTest is VaultFixture {
 
+// tick 30 的原始比价约是 0.997。即便小于1，也能算出价格。
+    function test_priceBelowOneDoesNotRevert() public {
+        pool.swap(address(this), false, 1, TickMath.getSqrtRatioAtTick(30), "");
+        vm.warp(block.timestamp + 1800);
+        assertGt(vault.getETHAsUSDCPrice(1e18), 10**12);
+    }
 
 // 测试 token0 是 usdc时，getPirce走的分支。
     function test_usdcToken0UsesMulDiv() public {
@@ -43,7 +49,7 @@ contract GetPriceAndGetETHAsUSDCPriceTest is VaultFixture {
         vm.warp(block.timestamp + 1800);
         (, int24 tick, , , , , ) = pool.slot0();
         assertEq(tick, 6932);
-        assertEq(vault.getPrice(), 2);
+        assertEq(10**12 / vault.getETHAsUSDCPrice(1e18), 2);
 
     }
 
@@ -59,7 +65,7 @@ contract GetPriceAndGetETHAsUSDCPriceTest is VaultFixture {
         vm.warp(block.timestamp + 1799);
         (, int24 tick, , , , , ) = pool.slot0();
         assertEq(tick, -6935);
-        assertEq(vault.getPrice(), 2);
+        assertEq(10**12 / vault.getETHAsUSDCPrice(1e18), 2);
     }
 
 // 目前weth是token0，getPrice 返回的是池子价格的倒数；正 tick 会让这个倒数小于 1，整数结果变成 0。
@@ -76,19 +82,16 @@ contract GetPriceAndGetETHAsUSDCPriceTest is VaultFixture {
         vm.warp(block.timestamp + 1800);
         (, int24 tick, , , , , ) = pool.slot0();
         assertEq(tick, -6932);
-        assertEq(vault.getPrice(), 2);
+        // 10**12 是 tick 0 时 1 个 WETH 值多少整颗 USDC。
+        // 当前比价大约是2倍，用tick0时的价格，去除以目前的价格，得到的2，意思是1 个 USDC 最小单位大约值 2 wei。
+        assertEq(10**12 / vault.getETHAsUSDCPrice(1e18), 2);
 
     }
 
-// 夹具里面价格已经是 1 且持续了 1800 秒
-    function test_tickZeroPriceIsOne() public {
-        uint256 price = vault.getPrice();
-        assertEq(price, 1);
-    }
 
 // 夹具里面价格已经是 1 且持续了 1800 秒
     function test_oneWethIs1e12Usdc() public {
-        uint256 price = vault.getETHAsUSDCPrice();
+        uint256 price = vault.getETHAsUSDCPrice(1e18);
         assertEq(price, 10**12);
     }
 

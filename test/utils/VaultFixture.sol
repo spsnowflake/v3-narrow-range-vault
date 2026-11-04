@@ -16,8 +16,8 @@ abstract contract VaultFixture is Test {
     int24 internal constant TICK_LOWER = -60;
     int24 internal constant TICK_UPPER = 60;
 
-    TestERC20 internal usdc;
-    TestERC20 internal weth;
+    TestERC20 public usdc;
+    TestERC20 public weth;
     IUniswapV3Factory internal factory;
     IUniswapV3Pool internal pool;
     V3NarrowRangeVault internal vault;
