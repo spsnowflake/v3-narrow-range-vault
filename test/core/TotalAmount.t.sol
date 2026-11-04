@@ -9,10 +9,11 @@ import {TestERC20} from "../utils/TestERC20.sol";
 import {V3NarrowRangeVault} from "../../src/V3NarrowRangeVault.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SqrtPriceMath} from "uniswap-v3-core/contracts/libraries/SqrtPriceMath.sol";
+import {PoolSwapCallback} from "../Abstract/PoolSwapCallback.sol";
 
 
 
-contract TotalAmountTest is VaultFixture {
+contract TotalAmountTest is VaultFixture, PoolSwapCallback {
 
     address user1 = makeAddr("user1");
 
@@ -185,12 +186,7 @@ contract TotalAmountTest is VaultFixture {
         assertLt(fee, token0 / 100);
     }
 
-// swap回调
-    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata) external {
-        require(msg.sender == address(pool));
-        if (amount0Delta > 0) weth.transfer(msg.sender, uint256(amount0Delta));
-        if (amount1Delta > 0) usdc.transfer(msg.sender, uint256(amount1Delta));
-    }
+
     
     
     
