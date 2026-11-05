@@ -114,7 +114,7 @@ contract V3NarrowRangeVault is ERC4626 {
 
 
 // 按个人份额比例赎回
-    function Redeem(uint256 shares) public returns (uint256 amountUsdc,uint256 amountWeth) {
+    function redeem(uint256 shares) public returns (uint256 amountUsdc,uint256 amountWeth) {
         require(shares > 0, "Shares must be greater than 0");
         require(shares <= balanceOf(msg.sender), "Insufficient balance");
 
@@ -483,7 +483,7 @@ contract V3NarrowRangeVault is ERC4626 {
 
 
     /// 把 uint256 向下收窄成 uint128
-    function toUint128(uint256 x) private pure returns (uint128 y) {
+    function toUint128(uint256 x) public pure returns (uint128 y) {
         require((y = uint128(x)) == x);
     }
 

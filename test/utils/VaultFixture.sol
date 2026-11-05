@@ -21,7 +21,7 @@ abstract contract VaultFixture is Test {
     IUniswapV3Factory internal factory;
     IUniswapV3Pool internal pool;
     V3NarrowRangeVault internal vault;
-
+    // address public admin;
 
     function setUp() public virtual {
         usdc = new TestERC20("USD Coin", "USDC", 6);
