@@ -9,7 +9,7 @@ import {TestERC20} from "../utils/TestERC20.sol";
 import {V3NarrowRangeVault} from "../../src/V3NarrowRangeVault.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SqrtPriceMath} from "uniswap-v3-core/contracts/libraries/SqrtPriceMath.sol";
-import {PoolSwapCallback} from "../Abstract/PoolSwapCallback.sol";
+import {PoolSwapCallback} from "../abstract/PoolSwapCallback.sol";
 
 
 
