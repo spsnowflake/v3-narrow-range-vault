@@ -16,7 +16,6 @@ contract DepositTest is VaultFixture {
 
     address user1 = makeAddr("user1");
     address user2 = makeAddr("user2");
-
     
 
 // 测试最小份额不满足

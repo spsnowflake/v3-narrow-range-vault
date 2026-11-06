@@ -104,7 +104,7 @@ contract V3NarrowRangeVault is ERC4626 {
             tickUpper,
             newLiquidity,
             abi.encode(address(this))
-        );
+            );
         }
         // 如果 newLiquidity 为0，则表示这次没有铸出新仓，币留在金库里，返参都是0。
         // 否则，usdc 和 weth 是实际铸进新仓的数量。
@@ -209,20 +209,7 @@ contract V3NarrowRangeVault is ERC4626 {
         return (liquidity, shares, usdc, weth);
     }
 
-// 重写 uniswapV3MintCallback 方法，用于处理池子 mint 回调付款
-    function uniswapV3MintCallback(uint256 amount0Owed, uint256 amount1Owed, bytes calldata data) external {
-        require(msg.sender == address(pool));
-        address payer = abi.decode(data, (address));
-        address token0 = pool.token0();
-        address token1 = pool.token1();
-        if (payer == address(this)) {
-            if (amount0Owed > 0) IERC20(token0).transfer(msg.sender, amount0Owed);
-            if (amount1Owed > 0) IERC20(token1).transfer(msg.sender, amount1Owed);
-        }else{
-            if (amount0Owed > 0) IERC20(token0).transferFrom(payer, msg.sender, amount0Owed);
-            if (amount1Owed > 0) IERC20(token1).transferFrom(payer, msg.sender, amount1Owed);
-        }
-    }
+
 
 
 // 预估存款数量
@@ -498,6 +485,21 @@ contract V3NarrowRangeVault is ERC4626 {
         require(msg.sender == admin, "Only admin can call this function");
         _;
         
+    }
+
+    // 重写 uniswapV3MintCallback 方法，用于处理池子 mint 回调付款
+    function uniswapV3MintCallback(uint256 amount0Owed, uint256 amount1Owed, bytes calldata data) external {
+        require(msg.sender == address(pool),"UniswapV3MintCallback: msg.sender must be pool");
+        address payer = abi.decode(data, (address));
+        address token0 = pool.token0();
+        address token1 = pool.token1();
+        if (payer == address(this)) {
+            if (amount0Owed > 0) IERC20(token0).transfer(msg.sender, amount0Owed);
+            if (amount1Owed > 0) IERC20(token1).transfer(msg.sender, amount1Owed);
+        }else{
+            if (amount0Owed > 0) IERC20(token0).transferFrom(payer, msg.sender, amount0Owed);
+            if (amount1Owed > 0) IERC20(token1).transferFrom(payer, msg.sender, amount1Owed);
+        }
     }
 
 
