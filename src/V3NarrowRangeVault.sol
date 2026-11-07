@@ -253,7 +253,7 @@ contract V3NarrowRangeVault is ERC4626 {
         amountWeth = address(weth_erc20) == pool.token0() ? amountA : amountB;
         uint256 totalAssets = wethInUsdc(amountWeth) + amountUsdc;
 
-        shares = _convertToShares(totalAssets, Math.Rounding.Floor);
+        shares = convertToShares(totalAssets);
         return (liquidity, amountUsdc, amountWeth, shares);
     }
 
