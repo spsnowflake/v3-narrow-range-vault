@@ -26,7 +26,7 @@ contract TotalAssetsTest is VaultFixture, PoolSwapCallback {
         usdc.approve(address(vault), type(uint256).max);
         weth.approve(address(vault), type(uint256).max);
 
-        (uint128 liquidity, uint256 shares, uint256 usdcCount, uint256 wethCount) = vault.deposit(1000e18, 1000e18, 0, user1);
+        (uint128 liquidity, uint256 usdcCount, uint256 wethCount, uint256 shares) = vault.deposit(1000e18, 1000e18, 0, user1);
         assertTrue(usdcCount > 0);
         assertTrue(wethCount > 0);
         vm.stopPrank();

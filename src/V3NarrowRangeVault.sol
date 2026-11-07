@@ -175,7 +175,6 @@ contract V3NarrowRangeVault is ERC4626 {
         (amountUsdc,amountWeth) = totalAmount();
         return (Math.mulDiv(amountUsdc, shares, totalSupply() + 10 ** _decimalsOffset()),
                 Math.mulDiv(amountWeth, shares, totalSupply() + 10 ** _decimalsOffset()));
-
     }
 
 
@@ -206,7 +205,7 @@ contract V3NarrowRangeVault is ERC4626 {
         require(shares >= minShares, 'Minimum shares not met');
 
         _mint(receiver, shares);
-        return (liquidity, shares, usdc, weth);
+        return (liquidity, usdc, weth,shares);
     }
 
 

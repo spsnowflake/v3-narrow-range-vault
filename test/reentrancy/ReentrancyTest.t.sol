@@ -31,7 +31,7 @@ contract ReentrancyTest is VaultFixture {
         usdcToken.approve(address(vault), type(uint256).max);
         wethToken.approve(address(vault), type(uint256).max);
 
-        (uint128 liquidity, uint256 shares,,) = vault.deposit(1000, 1000, 0, user1);
+        (uint128 liquidity,,, uint256 shares) = vault.deposit(1000, 1000, 0, user1);
         vm.stopPrank();
 
         // 回调里的第二次 deposit 被池子锁回滚，外层只铸了一次份额。

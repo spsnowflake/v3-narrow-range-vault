@@ -27,11 +27,12 @@ contract RebalanceTest is VaultFixture, PoolSwapCallback {
 
 // 测试再平衡时，新区间铸造失败，币不够。以及流动性为0时，再平衡不会触发burn0的revert。
     function test_RebalanceNotEnoughCoinsAndNotBurn0() public {
+
         vm.startPrank(user1);
         usdc.approve(address(vault), type(uint256).max);
         weth.approve(address(vault), type(uint256).max);
         assertEq(vault.balanceOf(user1), 0);
-        (uint128 liquidityUser1, uint256 sharesUser1,,) = vault.deposit(3000e18, 3000e18, 0, user1);
+        (uint128 liquidityUser1,,, uint256 sharesUser1) = vault.deposit(3000e18, 3000e18, 0, user1);
         assertTrue(liquidityUser1 > 0);
         assertTrue(sharesUser1 > 0);
         vm.stopPrank();
@@ -83,7 +84,7 @@ contract RebalanceTest is VaultFixture, PoolSwapCallback {
         usdc.approve(address(vault), type(uint256).max);
         weth.approve(address(vault), type(uint256).max);
         assertEq(vault.balanceOf(user1), 0);
-        (uint128 liquidityUser1, uint256 sharesUser1,,) = vault.deposit(3000e18, 3000e18, 0, user1);
+        (uint128 liquidityUser1,,, uint256 sharesUser1) = vault.deposit(3000e18, 3000e18, 0, user1);
         assertTrue(liquidityUser1 > 0);
         assertTrue(sharesUser1 > 0);
         vm.stopPrank();
@@ -125,7 +126,7 @@ contract RebalanceTest is VaultFixture, PoolSwapCallback {
         usdc.approve(address(vault), type(uint256).max);
         weth.approve(address(vault), type(uint256).max);
         assertEq(vault.balanceOf(user1), 0);
-        (uint128 liquidityUser1, uint256 sharesUser1,,) = vault.deposit(3000e18, 3000e18, 0, user1);
+        (uint128 liquidityUser1,,, uint256 sharesUser1) = vault.deposit(3000e18, 3000e18, 0, user1);
         assertTrue(liquidityUser1 > 0);
         assertTrue(sharesUser1 > 0);
         vm.stopPrank();

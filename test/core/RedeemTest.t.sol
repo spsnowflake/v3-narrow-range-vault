@@ -97,7 +97,7 @@ contract RedeemTest is VaultFixture, PoolSwapCallback {
         usdc.approve(address(vault), type(uint256).max);
         weth.approve(address(vault), type(uint256).max);
         assertEq(vault.balanceOf(user1), 0);
-        (uint128 liquidityUser1, uint256 sharesUser1,,) = vault.deposit(50e18, 50e18, 0, user1);
+        (uint128 liquidityUser1,,, uint256 sharesUser1) = vault.deposit(50e18, 50e18, 0, user1);
         assertTrue(liquidityUser1 > 0);
         assertTrue(sharesUser1 > 0);
         vm.stopPrank();
@@ -105,7 +105,7 @@ contract RedeemTest is VaultFixture, PoolSwapCallback {
         vm.startPrank(user2);
         usdc.approve(address(vault), type(uint256).max);
         weth.approve(address(vault), type(uint256).max);
-        (uint128 liquidityUser2, uint256 sharesUser2,,) = vault.deposit(100e18, 100e18, 0, user2);
+        (uint128 liquidityUser2,,, uint256 sharesUser2) = vault.deposit(100e18, 100e18, 0, user2);
         assertTrue(liquidityUser2 > 0);
         assertTrue(sharesUser2 > 0);
         vm.stopPrank();
@@ -164,7 +164,7 @@ contract RedeemTest is VaultFixture, PoolSwapCallback {
         usdc.approve(address(vault), type(uint256).max);
         weth.approve(address(vault), type(uint256).max);
         assertEq(vault.balanceOf(user1), 0);
-        (uint128 liquidityUser1, uint256 sharesUser1,,) = vault.deposit(50e18, 50e18, 0, user1);
+        (uint128 liquidityUser1,,, uint256 sharesUser1) = vault.deposit(50e18, 50e18, 0, user1);
         assertTrue(liquidityUser1 > 0);
         assertTrue(sharesUser1 > 0);
         vm.stopPrank();
@@ -172,7 +172,7 @@ contract RedeemTest is VaultFixture, PoolSwapCallback {
         vm.startPrank(user2);
         usdc.approve(address(vault), type(uint256).max);
         weth.approve(address(vault), type(uint256).max);
-        (uint128 liquidityUser2, uint256 sharesUser2,,) = vault.deposit(100e18, 100e18, 0, user2);
+        (uint128 liquidityUser2,,, uint256 sharesUser2) = vault.deposit(100e18, 100e18, 0, user2);
         assertTrue(liquidityUser2 > 0);
         assertTrue(sharesUser2 > 0);
         vm.stopPrank();
@@ -244,7 +244,7 @@ contract RedeemTest is VaultFixture, PoolSwapCallback {
         weth.approve(address(vault), type(uint256).max);
 
         assertEq(vault.balanceOf(user1), 0);
-        (uint128 liquidity, uint256 shares, uint256 usdcCount, uint256 wethCount) = vault.deposit(1000e18, 1000e18, 0, user1);
+        (uint128 liquidity, uint256 usdcCount, uint256 wethCount, uint256 shares) = vault.deposit(1000e18, 1000e18, 0, user1);
         assertTrue(liquidity > 0);
         assertTrue(shares > 0);
         uint256 redeemAmount = vault.balanceOf(user1) + 1;

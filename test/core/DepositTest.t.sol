@@ -44,7 +44,7 @@ contract DepositTest is VaultFixture {
         weth.approve(address(vault), type(uint256).max);
 
         assertEq(vault.balanceOf(user1), 0);
-        (uint128 liquidity, uint256 shares, uint256 usdcCount, uint256 wethCount) = vault.deposit(1000e18, 10e18, 0, user1);
+        (uint128 liquidity, uint256 usdcCount, uint256 wethCount, uint256 shares) = vault.deposit(1000e18, 10e18, 0, user1);
         assertTrue(liquidity > 0);
         assertTrue(shares > 0);
         assertTrue(usdcCount > 0);
@@ -55,6 +55,7 @@ contract DepositTest is VaultFixture {
 // 因为前面已经存储了份额,再用上面的公式会错.要复现当时份额,totalSupply为0.
         uint256 shares2 = assets * 10**12 / (vault.totalAssets() + 1);
         assertEq(shares2, shares);
+
         
     }
 
@@ -65,7 +66,7 @@ contract DepositTest is VaultFixture {
         weth.approve(address(vault), type(uint256).max);
 
         assertEq(vault.balanceOf(user1), 0);
-        (uint128 liquidity, uint256 shares, uint256 usdc, uint256 weth) = vault.deposit(1000e18, 1000e18, 0, user1);
+        (uint128 liquidity, uint256 usdc, uint256 weth, uint256 shares) = vault.deposit(1000e18, 1000e18, 0, user1);
         assertTrue(liquidity > 0);
         assertTrue(shares > 0);
         assertTrue(usdc > 0);
@@ -73,7 +74,7 @@ contract DepositTest is VaultFixture {
         assertEq(vault.balanceOf(user1), shares);
 
 
-        (uint128 liquidity2, uint256 shares2, uint256 usdc2, uint256 weth2) = vault.deposit(2000e18, 2000e18, 0, user2);
+        (uint128 liquidity2, uint256 usdc2, uint256 weth2,uint256 shares2) = vault.deposit(2000e18, 2000e18, 0, user2);
         assertTrue(liquidity2 > 0);
         assertTrue(shares2 > 0);
         assertTrue(usdc2 > 0);

@@ -17,7 +17,7 @@ contract ShareInflationTest is VaultFixture {
         vm.startPrank(user1);
         usdc.approve(address(vault), type(uint256).max);
         weth.approve(address(vault), type(uint256).max);
-        (uint128 liquidityUser1, uint256 sharesUser1, uint256 usdcUser1, uint256 wethUser1) = vault.deposit(1000, 1000, 0, user1);
+        (uint128 liquidityUser1, uint256 usdcUser1, uint256 wethUser1, uint256 sharesUser1) = vault.deposit(1000, 1000, 0, user1);
         assertTrue(sharesUser1 > 0);
         assertTrue(liquidityUser1 > 0);
 
@@ -29,7 +29,7 @@ contract ShareInflationTest is VaultFixture {
         vm.startPrank(user2);
         usdc.approve(address(vault), type(uint256).max);
         weth.approve(address(vault), type(uint256).max);
-        (uint128 liquidityUser2, uint256 sharesUser2, uint256 usdcUser2, uint256 wethUser2) = vault.deposit(1e18, 1e18, 0, user2);
+        (uint128 liquidityUser2, uint256 usdcUser2, uint256 wethUser2, uint256 sharesUser2) = vault.deposit(1e18, 1e18, 0, user2);
         // 份额不会被攻击成0
         assertTrue(sharesUser2 > 0);
         assertTrue(liquidityUser2 > 0);

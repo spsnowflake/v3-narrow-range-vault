@@ -25,7 +25,7 @@ contract PreviewRedeemTest is VaultFixture {
         weth.approve(address(vault), type(uint256).max);
 
         assertEq(vault.balanceOf(user1), 0);
-        (uint128 liquidity, uint256 shares, , ) = vault.deposit(1000e18, 1000e18, 0, user1);
+        (uint128 liquidity, , , uint256 shares) = vault.deposit(1000e18, 1000e18, 0, user1);
         assertTrue(liquidity > 0);
         assertTrue(shares > 0);
         vm.stopPrank();
@@ -51,7 +51,7 @@ contract PreviewRedeemTest is VaultFixture {
         weth.approve(address(vault), type(uint256).max);
 
         assertEq(vault.balanceOf(user1), 0);
-        (uint128 liquidity, uint256 shares, uint256 usdcCount, uint256 wethCount) = vault.deposit(1000e18, 1000e18, 0, user1);
+        (uint128 liquidity, uint256 usdcCount, uint256 wethCount, uint256 shares) = vault.deposit(1000e18, 1000e18, 0, user1);
         assertTrue(liquidity > 0);
         assertTrue(shares > 0);
         uint256 redeemAmount = vault.balanceOf(user1) + 1;
