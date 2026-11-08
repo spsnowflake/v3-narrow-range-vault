@@ -75,9 +75,7 @@ contract V3NarrowRangeVault is ERC4626 {
         int24 averageTick = int24(delta % 1800 != 0&&delta<0 ? (delta / 1800) - 1 : (delta / 1800));
         require(averageTick >= newTickLower && averageTick < newTickUpper, "averageTick must be between newTickLower and newTickUpper");
 
-        bytes32 positionKey = keccak256(abi.encodePacked(address(this), tickLower, tickUpper));
-        (uint128 liquidity, , , , ) = pool.positions(positionKey);
-        
+        uint128 liquidity = getLiquidity();
         if (liquidity != 0) {
             pool.burn( tickLower, tickUpper, liquidity);  
         }
